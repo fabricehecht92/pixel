@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0,user-scalable=no">
+    <title>Jump and Run Game</title>
+    <style>
+	*  {
+	    -ms-user-select: none;
+	    -webkit-user-select: none;
+	    user-select: none;
+	    touch-action: pan-x pan-y;
+	}
+        body {
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background: linear-gradient(45deg, red, orange, yellow, green, blue, indigo, violet); /* Regenbogen Hintergrund */
+            flex-direction: column;
+            overflow: hidden;
+            user-select: none; /* Textmarkierung verhindern */
+        }
+        canvas {
+            border: 2px solid black;
+            background-color: #87CEEB; /* Heller blauer Hintergrund für das Spiel */
+            touch-action: none; /* Verhindert Touch-Zoom und andere unerwünschte Aktionen */
+	    -webkit-touch-callout: none; 
+  	    -webkit-text-size-adjust: none; 
+            -webkit-user-select: none; 
+            touch-action: manipulation;
+            pointer-events: none;
+
+        }
+        .scoreboard {
+            font-family: Arial, sans-serif;
+            font-size: 18px;
+            margin-bottom: 10px;
+	    display: none;
+	        }
+        /* Steuerbuttons Container */
+        .controls {
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            align-items: center;
+            position: absolute;
+            bottom: 20px;
+            width: 100%;
+            max-width: 480px; /* Maximale Breite für größere Bildschirme */
+            padding: 10px;
+        }
+        .button-row {
+            display: flex;
+            justify-content: center;
+            width: 100%;
+        }
+        .control-button {
+	    display: none;
+            width: 12px; /* Größere Buttons */
+            height: 12px;
+            background-color: #FF6347;
+            color: white;
+            font-size: 30px; /* Größere Schrift */
+            border-radius: 10px; /* Eckige Buttons */
+            border: none;
+            margin: 10px; /* Mehr Abstand zwischen den Buttons */
+            cursor: pointer;
+            box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.3);
+            text-align: center;
+            justify-content: center;
+            align-items: center;
+        }
+        .control-button:active {
+            background-color: #FF4500;
+        }
+
+        /* Verhindert Textmarkierung auf den Buttons */
+        .control-button {
+            user-select: none; /* Keine Textmarkierung */
+        }
+
+        /* Responsive Anpassungen */
+        @media (max-width: 600px) {
+            canvas {
+                transform: scale(0.7); /* Spielbildschirm skalieren */
+                transform-origin: 0 0; /* Skalierung von der oberen linken Ecke */
+		margin-left: 40%;
+		margin-bottom: 3em;
+		touch-action: pax-x pan-y;
+           }
+            .control-button {
+                width: 140px;
+                height: 80px;
+                font-size: 24px;
+		margin-top: 1em;
+		display: inline;
+		-ms-user-select: none;
+    		-webkit-user-select: none;
+    		user-select: none;
+            }
+	    #up{
+		width: 100px;
+		height: 100px;
+		border-radius: 50%;
+		margin-left: 50%;
+		}
+	    #left{
+		width:85px;
+		height:85px;
+		border-radius: 50%;
+		}
+	    #right{
+		width: 85px;
+		height: 85px;
+		border-radius: 50%;
+		margin-right: 35%;
+		}
+        }
+    </style>
+</head>
+<body>
+    <div class="scoreboard">
+        <div>&nbsp;<span id="highscore">&nbsp;</span></div>
+    </div>
+    <canvas id="gameCanvas" width="480" height="320"></canvas>
+
+    <!-- Steuerbuttons -->
+    <div class="controls">
+        <div class="button-row">
+            <button id="up" class="control-button"></button>
+        </div>
+        <div class="button-row">
+            <button id="left" class="control-button">←</button>
+            <button id="right" class="control-button">→</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+
+        const GRAVITY = 0.5;
+        const FRICTION = 0.98;
+        const PLAYER_WIDTH = 16;
+        const PLAYER_HEIGHT = 16;
+
+        let player = {
+            x: 50,
+            y: 240,
+            width: PLAYER_WIDTH,
+            height: PLAYER_HEIGHT,
+            speedX: 0,
+            speedY: 0,
+            speed: 3,
+            jumping: false,
+            onGround: false,
+            doubleJump: false
+        };
+
+        let keys = {
+            left: false,
+            right: false,
+            up: false
+        };
+
+        let score = 0;
+        let highscore = localStorage.getItem("highscore") ? parseInt(localStorage.getItem("highscore")) : 0;
+
+        let platforms = [];
+        let items = [];
+        let enemies = [];
+
+        // Anzeige des aktuellen Highscores auf der Seite
+        document.getElementById("highscore").textContent = highscore;
+
+        // Eingabe per Steuerbuttons (Touch)
+        document.getElementById("left").addEventListener("touchstart", () => keys.left = true);
+        document.getElementById("left").addEventListener("touchend", () => keys.left = false);
+        document.getElementById("right").addEventListener("touchstart", () => keys.right = true);
+        document.getElementById("right").addEventListener("touchend", () => keys.right = false);
+        document.getElementById("up").addEventListener("touchstart", () => {
+            if (!player.jumping) {
+                player.speedY = -10; // Sprungkraft
+                player.jumping = true;
+                player.onGround = false;
+            } else if (!player.doubleJump) {
+                player.speedY = -10; // Weitere Sprungkraft
+                player.doubleJump = true; // Doppelsprung aktiviert
+            }
+        });
+
+        // Mausereignisse für Desktop (Touchsteuerung)
+        document.getElementById("left").addEventListener("mousedown", () => keys.left = true);
+        document.getElementById("left").addEventListener("mouseup", () => keys.left = false);
+        document.getElementById("right").addEventListener("mousedown", () => keys.right = true);
+        document.getElementById("right").addEventListener("mouseup", () => keys.right = false);
+        document.getElementById("up").addEventListener("mousedown", () => {
+            if (!player.jumping) {
+                player.speedY = -10; // Sprungkraft
+                player.jumping = true;
+                player.onGround = false;
+            } else if (!player.doubleJump) {
+                player.speedY = -10; // Weitere Sprungkraft
+                player.doubleJump = true; // Doppelsprung aktiviert
+            }
+        });
+
+        // Tastatursteuerung
+        window.addEventListener("keydown", (event) => {
+            if (event.key === "ArrowLeft" || event.key === "a") {
+                keys.left = true;
+            }
+            if (event.key === "ArrowRight" || event.key === "d") {
+                keys.right = true;
+            }
+            if (event.key === "ArrowUp" || event.key === "w") {
+                if (!player.jumping) {
+                    player.speedY = -10; // Sprungkraft
+                    player.jumping = true;
+                    player.onGround = false;
+                } else if (!player.doubleJump) {
+                    player.speedY = -10; // Weitere Sprungkraft
+                    player.doubleJump = true; // Doppelsprung aktiviert
+                }
+            }
+        });
+
+        window.addEventListener("keyup", (event) => {
+            if (event.key === "ArrowLeft" || event.key === "a") {
+                keys.left = false;
+            }
+            if (event.key === "ArrowRight" || event.key === "d") {
+                keys.right = false;
+            }
+        });
+
+        // Spiel-Schleife
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Spiel logik
+        function update() {
+            if (keys.left) player.speedX = -player.speed;
+            else if (keys.right) player.speedX = player.speed;
+            else player.speedX = 0;
+
+            // Schwerkraft anwenden
+            if (!player.onGround) {
+                player.speedY += GRAVITY;
+            }
+
+            player.x += player.speedX;
+            player.y += player.speedY;
+
+            // Kollision mit Plattformen
+            handleCollisions();
+
+            // Gegner bewegen
+            handleEnemies();
+
+            // Kollision mit Gegnern
+            handleEnemyCollisions();
+
+            // Kollision mit Items
+            handleItemCollection();
+
+            // Grenzen überprüfen
+            if (player.x < 0) player.x = 0;
+            if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
+            if (player.y > canvas.height - player.height) {
+                player.y = canvas.height - player.height;
+                player.speedY = 0;
+                player.jumping = false;
+                player.doubleJump = false;
+            }
+
+            // Wenn alle Items eingesammelt sind, nächstes Level starten
+            if (items.every(item => item.collected)) {
+                nextLevel();
+            }
+        }
+
+        // Kollision mit Plattformen
+        function handleCollisions() {
+            player.onGround = false;
+            for (let platform of platforms) {
+                if (player.x + player.width > platform.x &&
+                    player.x < platform.x + platform.width &&
+                    player.y + player.height <= platform.y &&
+                    player.y + player.height + player.speedY >= platform.y) {
+                    player.speedY = 0;
+                    player.y = platform.y - player.height;
+                    player.jumping = false;
+                    player.doubleJump = false;
+                    player.onGround = true;
+                }
+            }
+        }
+
+        // Gegnerbehandlung
+        function handleEnemies() {
+            for (let enemy of enemies) {
+                enemy.x += enemy.direction * enemy.speed;
+                if (enemy.x < 0 || enemy.x + enemy.width > canvas.width) {
+                    enemy.direction *= -1; // Richtung umkehren
+                }
+            }
+        }
+
+        // Kollision mit Gegnern
+        function handleEnemyCollisions() {
+            for (let enemy of enemies) {
+                if (player.x < enemy.x + enemy.width &&
+                    player.x + player.width > enemy.x &&
+                    player.y < enemy.y + enemy.height &&
+                    player.y + player.height > enemy.y) {
+                    resetGame();
+                }
+            }
+        }
+
+        // Items einsammeln
+        function handleItemCollection() {
+            for (let item of items) {
+                if (!item.collected &&
+                    player.x < item.x + item.width &&
+                    player.x + player.width > item.x &&
+                    player.y < item.y + item.height &&
+                    player.y + player.height > item.y) {
+                    item.collected = true;
+                    score += 10;
+                }
+            }
+        }
+
+        // Nächstes Level
+        function nextLevel() {
+            platforms = generatePlatforms();
+            items = generateItems();
+            enemies = generateEnemies();
+        }
+
+        // Plattformen generieren
+        function generatePlatforms() {
+            let generatedPlatforms = [];
+            for (let i = 0; i < 5; i++) {
+                let x = Math.random() * (canvas.width - 50);
+                let y = Math.random() * (canvas.height / 2) + 100;
+                generatedPlatforms.push({ x: x, y: y, width: 100, height: 10 });
+            }
+            return generatedPlatforms;
+        }
+
+        // Items generieren
+        function generateItems() {
+            let generatedItems = [];
+            for (let i = 0; i < 3; i++) {
+                let x = Math.random() * (canvas.width - 20);
+                let y = Math.random() * (canvas.height - 20);
+                generatedItems.push({ x: x, y: y, width: 20, height: 20, collected: false });
+            }
+            return generatedItems;
+        }
+
+        // Gegner generieren
+        function generateEnemies() {
+            let generatedEnemies = [];
+            let enemyCount = Math.min(8, Math.floor(score / 100) + 3);
+            for (let i = 0; i < enemyCount; i++) {
+                let x = Math.random() * (canvas.width - 20);
+                let y = Math.random() * (canvas.height / 2) + 100;
+                let direction = Math.random() > 0.5 ? 1 : -1;
+                generatedEnemies.push({ x: x, y: y, width: 20, height: 20, speed: 2, direction: direction });
+            }
+            return generatedEnemies;
+        }
+
+        // Spiel zurücksetzen
+        function resetGame() {
+            score = 0;
+            player.x = 50;
+            player.y = 240;
+            player.speedX = 0;
+            player.speedY = 0;
+            player.jumping = false;
+            player.doubleJump = false;
+            platforms = generatePlatforms();
+            items = generateItems();
+            enemies = generateEnemies();
+        }
+
+        // Spiel zeichnen
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Plattformen zeichnen
+            ctx.fillStyle = "#006400";
+            for (let platform of platforms) {
+                ctx.fillRect(platform.x, platform.y, platform.width, platform.height);
+            }
+
+            // Items zeichnen
+            ctx.fillStyle = "#FFD700";
+            for (let item of items) {
+                if (!item.collected) {
+                    ctx.fillRect(item.x, item.y, item.width, item.height);
+                }
+            }
+
+            // Gegner zeichnen
+            ctx.fillStyle = "#FF0000";
+            for (let enemy of enemies) {
+                ctx.fillRect(enemy.x, enemy.y, enemy.width, enemy.height);
+            }
+
+            // Spieler zeichnen
+            ctx.fillStyle = "#0000FF";
+            ctx.fillRect(player.x, player.y, player.width, player.height);
+
+            // Punkte anzeigen
+            ctx.fillStyle = "#000000";
+            ctx.font = "16px Arial";
+            ctx.fillText("Punkte: " + score, 10, 20);
+        }
+
+        // Initiales Level starten
+        nextLevel();
+        gameLoop(); // Spiel starten
+    </script>
+</body>
+</html>
+
